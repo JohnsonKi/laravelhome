@@ -1,5 +1,6 @@
 # laravelhome
 
+https://github.com/FriendsOfPHP/Goutte
 php artisan make:controller HtmlAnalysisController
 composer require fabpot/goutte
 
