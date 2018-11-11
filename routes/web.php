@@ -14,3 +14,6 @@
 Route::get('/', function () {
     return view('welcome');
 });
+
+Route::post('/get_images', 'HtmlAnalysisController@parserImages');
+Route::post('/get_links', 'HtmlAnalysisController@parserLinks');
