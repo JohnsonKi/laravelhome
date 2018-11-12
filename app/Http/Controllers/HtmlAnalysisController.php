@@ -34,7 +34,7 @@ class HtmlAnalysisController extends Controller
     }
 
     public function getSubUrls($client, $url) {
-        $patterns = array('p > a', 'h1 > a', 'h3 > a', 'h4 > a', 'h5 > a', 'li > a', 'div > a', 'font > a', 'span > a');
+        $patterns = array('a');
         $crawler = $client->request('GET', $url);
         $subUrls = array();
         foreach($patterns as $pattern) {
@@ -43,8 +43,9 @@ class HtmlAnalysisController extends Controller
                 $strSize = mb_strlen(trim($node->text()));
                 // 隙間時間を置く
                 // sleep(1);
-                if ($strSize > 6) {
+                if ($strSize > 4) {
                     $doUrl = $node->link()->getUri();
+                    // error_log('before:<'.$node->link()->getUri().'>after<'.$node->attr('href').'>');
                     // home pageだけなら除外する
                     $urlPath = parse_url($doUrl, PHP_URL_PATH);
                     // linkでなくファイルの場合除外
@@ -52,7 +53,7 @@ class HtmlAnalysisController extends Controller
                     $last = end($path);
                     $excludeSuffixArray = array('js', 'css', 'jpg', 'jpeg', 'gif', 'bmp', 'png', 'txt');
                     if ($urlPath !== '/' && !in_array($last, $excludeSuffixArray)) {
-                        return array('text'=>$node->text(), 'url'=>$node->link()->getUri());
+                        return array('text'=>$node->text(), 'url'=>$doUrl);
                     }
                 }
             });
@@ -67,24 +68,22 @@ class HtmlAnalysisController extends Controller
     }
 
     public function getImages($crawler, $url) {
-        $urlPath = parse_url(trim($url));
-        $urlHome = $urlPath['scheme'] . '://' . $urlPath['host'];
-
-        $patterns = array('a > img','div > img','p > img','div > input','p > input','pre > img');
+        $patterns = array('img','input');
         $imgUrls = array();
         foreach($patterns as $pattern) {
             $tmp = $crawler->filter($pattern)->each(function ($node) {
                 $type = $node->nodeName();
                 $url = "";
                 if ($type == 'img') {
-                    $url1 = $node->image()->getUri();
-                    error_log('url1->'.$url1);
-                    $url3 = $node->attr('src');
-                    error_log('url3->'.$url3);
-                    if (!empty($url3)) {
-                        $url = $url3;
-                    } else {
+                    $url1 = $node->attr('data-src');
+                    $url2 = $node->attr('mydatasrc');
+                    if (!empty($url1)) {
                         $url = $url1;
+                    } else if (!empty($url2)) {
+                        $url = $url2;
+                    } else {
+                        $url = $node->image()->getUri();
+                        // error_log('before:<'.$node->image()->getUri().'>after<'.$node->attr('src').'>');
                     }
                 } else if ($type == 'input') {
                     $url2 = $node->attr('data-src');
@@ -95,12 +94,25 @@ class HtmlAnalysisController extends Controller
                         $url = $url2;
                     }
                 }
+                $includeSuffixArray = array('jpg', 'jpeg', 'gif', 'bmp', 'png');
                 $path = explode("?", $url);
+                if (!empty($path[1])) {
+                    // http://xxxx/sss/aaa?wx_fmt=jpeg
+                    $qtmp = explode("&", $path[1]);
+                    foreach($qtmp as $k=>$v) {
+                        $vv = explode("=", $v);
+                        foreach($vv as $kkk=>$vvv) {
+                            if (in_array($vvv, $includeSuffixArray)) {
+                                return $url;
+                            }
+                        }
+                    }
+                }
+                // http://xxxx/sss/aaa.jpeg
                 $first = current($path);
                 $urlPath = parse_url($first, PHP_URL_PATH);
                 $path = explode(".", $urlPath);
                 $last = end($path);
-                $includeSuffixArray = array('jpg', 'jpeg', 'gif', 'bmp', 'png');
                 if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
                     return $first;
                 }
@@ -110,12 +122,6 @@ class HtmlAnalysisController extends Controller
             }, ARRAY_FILTER_USE_BOTH);
             foreach($tmp as $key => $val) {
                 $imgUrls[] = $val;
-            }
-        }
-        foreach($imgUrls as $k=>$v) {
-            $tmpHost = parse_url($v, PHP_URL_HOST);
-            if (empty($tmpHost)) {
-                $imgUrls[$k] = $urlHome.'/'.$v;
             }
         }
         return $imgUrls;
