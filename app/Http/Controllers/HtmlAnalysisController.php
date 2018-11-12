@@ -19,7 +19,7 @@ class HtmlAnalysisController extends Controller
         $base_url = $req->input('base_url');
         $client = new Client();
         $crawler = $client->request('GET', $base_url);
-        $imgUrls = $this->getImages($crawler);
+        $imgUrls = $this->getImages($crawler, $base_url);
 
         // 深さ1まで掘出
 //         $subUrls = $this->getSubUrls($client, $base_url);
@@ -66,7 +66,10 @@ class HtmlAnalysisController extends Controller
         return $subUrls;
     }
 
-    public function getImages($crawler) {
+    public function getImages($crawler, $url) {
+        $urlPath = parse_url(trim($url));
+        $urlHome = $urlPath['scheme'] . '://' . $urlPath['host'];
+
         $patterns = array('a > img','div > img','p > img','div > input','p > input','pre > img');
         $imgUrls = array();
         foreach($patterns as $pattern) {
@@ -95,7 +98,10 @@ class HtmlAnalysisController extends Controller
                 $path = explode("?", $url);
                 $first = current($path);
                 $urlPath = parse_url($first, PHP_URL_PATH);
-                if ($urlPath !== '/') {
+                $path = explode(".", $urlPath);
+                $last = end($path);
+                $includeSuffixArray = array('jpg', 'jpeg', 'gif', 'bmp', 'png');
+                if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
                     return $first;
                 }
             });
@@ -104,6 +110,12 @@ class HtmlAnalysisController extends Controller
             }, ARRAY_FILTER_USE_BOTH);
             foreach($tmp as $key => $val) {
                 $imgUrls[] = $val;
+            }
+        }
+        foreach($imgUrls as $k=>$v) {
+            $tmpHost = parse_url($v, PHP_URL_HOST);
+            if (empty($tmpHost)) {
+                $imgUrls[$k] = $urlHome.'/'.$v;
             }
         }
         return $imgUrls;
