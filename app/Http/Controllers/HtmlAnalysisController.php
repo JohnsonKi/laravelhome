@@ -68,6 +68,7 @@ class HtmlAnalysisController extends Controller
     }
 
     public function getImages($crawler, $url) {
+        define('MIN_IMG_HEIGHT', 100);
         $patterns = array('img','input');
         $imgUrls = array();
         foreach($patterns as $pattern) {
@@ -103,7 +104,11 @@ class HtmlAnalysisController extends Controller
                         $vv = explode("=", $v);
                         foreach($vv as $kkk=>$vvv) {
                             if (in_array($vvv, $includeSuffixArray)) {
-                                return $url;
+                                list($imgW,$imgH) = getimagesize($url);
+                                // error_log('>>>>width:<'.$imgW.'> height:<'.$imgH.'>');
+                                if ($imgH > MIN_IMG_HEIGHT) {
+                                    return $url;
+                                }
                             }
                         }
                     }
@@ -114,7 +119,11 @@ class HtmlAnalysisController extends Controller
                 $path = explode(".", $urlPath);
                 $last = end($path);
                 if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
-                    return $first;
+                    list($imgW,$imgH) = getimagesize($url);
+                    // error_log('>>>>width:<'.$imgW.'> height:<'.$imgH.'>');
+                    if ($imgH > MIN_IMG_HEIGHT) {
+                        return $first;
+                    }
                 }
             });
             $tmp = array_filter($tmp, function($v, $k) {

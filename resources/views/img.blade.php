@@ -10,7 +10,7 @@
     <title>Hello, world!</title>
   </head>
   <body>
-    <div id="carouselExampleIndicators" class="carousel slide" data-ride="carousel">
+    <div id="carouselExampleIndicators" class="carousel slide" data-ride="carousel" data-interval="2000">
       <ol class="carousel-indicators">
         @foreach ($test as $url)
           @if ($loop->index < 1)
