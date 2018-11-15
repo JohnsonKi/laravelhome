@@ -11,6 +11,13 @@ class HtmlAnalysisController extends Controller
         $base_url = $req->input('base_url');
         $client = new Client();
         $suburls = $this->getSubUrls($client, $base_url);
+
+        // 深さ1まで掘出
+        foreach($suburls as $subUrl) {
+            $dep1s = $this->getSubUrls($client, $subUrl);
+            $suburls = array_merge($suburls, $dep1s);
+        }
+
         $data = ['test'=>$suburls];
         return view('link', $data);
     }

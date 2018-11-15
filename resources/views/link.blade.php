@@ -19,7 +19,7 @@
 
         <ul class="list-group">
             @foreach ($test as $text=>$url)
-                <li class="list-group-item"><a href="{{ $url }}" target="_blank">{{ $text }} - {{ $url }}</a></li>
+                <li class="list-group-item"><a href="{{ $url }}" target="_blank">{{$loop->iteration}}  -  {{ $text }}  -  {{ $url }}</a></li>
             @endforeach
         </ul>
     
