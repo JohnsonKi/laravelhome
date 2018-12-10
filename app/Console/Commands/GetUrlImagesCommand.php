@@ -42,8 +42,8 @@ class GetUrlImagesCommand extends Command
         $baseurl = $this->argument("baseurl");
         $destination_depth = 3;
         $client = new Client();
-        define('MIN_IMG_HEIGHT', 100);
-        
+        define('MIN_IMG_HEIGHT', 200);
+
         if (empty($baseurl)) {
 
             $url_links = DB::select('select link, depth from link_urls where img_done_flg = ? order by depth', [0]);
@@ -87,15 +87,34 @@ class GetUrlImagesCommand extends Command
                     }
                 }
                 $includeSuffixArray = array('jpg', 'jpeg', 'gif', 'bmp', 'png');
-                $path = explode("?", $url);
-                if (!empty($path[1])) {
+                if (!$this->checkURL($url)) {
+                    return;
+                };
+                $easypath = explode("?", $url);
+                // http://xxxx/sss/aaa.jpeg
+                $first = current($easypath);
+                $urlPath = parse_url($first, PHP_URL_PATH);
+                $path = explode(".", $urlPath);
+                $last = end($path);
+                if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
+                    if (!empty($easypath[1])) {
+                        list($imgW,$imgH) = getimagesize(substr($url, 0, strpos($url, "?")));
+                    } else {
+                        list($imgW,$imgH) = getimagesize($url);
+                    }
+                    // error_log('>>>>width:<'.$imgW.'> height:<'.$imgH.'>');
+                    if ($imgH > MIN_IMG_HEIGHT) {
+                        return $first;
+                    }
+                }
+                if (!empty($easypath[1])) {
                     // http://xxxx/sss/aaa?wx_fmt=jpeg
-                    $qtmp = explode("&", $path[1]);
+                    $qtmp = explode("&", $easypath[1]);
                     foreach($qtmp as $k=>$v) {
                         $vv = explode("=", $v);
                         foreach($vv as $kkk=>$vvv) {
                             if (in_array($vvv, $includeSuffixArray)) {
-                                list($imgW,$imgH) = getimagesize($url);
+                                list($imgW,$imgH) = getimagesize(substr($url, 0, strpos($url, "?")));
                                 // error_log('>>>>width:<'.$imgW.'> height:<'.$imgH.'>');
                                 if ($imgH > MIN_IMG_HEIGHT) {
                                     return $url;
@@ -104,19 +123,10 @@ class GetUrlImagesCommand extends Command
                         }
                     }
                 }
-                // http://xxxx/sss/aaa.jpeg
-                $first = current($path);
-                $urlPath = parse_url($first, PHP_URL_PATH);
-                $path = explode(".", $urlPath);
-                $last = end($path);
-                if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
-                    list($imgW,$imgH) = getimagesize($url);
-                    // error_log('>>>>width:<'.$imgW.'> height:<'.$imgH.'>');
-                    if ($imgH > MIN_IMG_HEIGHT) {
-                        return $first;
-                    }
-                }
+
+                sleep(10);
             });
+
             $tmp = array_filter($tmp, function($v, $k) {
                 return !empty($v);
             }, ARRAY_FILTER_USE_BOTH);
@@ -135,5 +145,14 @@ class GetUrlImagesCommand extends Command
             }
         }
         DB::update('update link_urls set have_img_counts = ?, img_done_flg = ? where link = ?', [count($imgUrls), 1, $url]);
+    }
+
+    public function checkURL($url) {
+        $response = @file_get_contents($url);
+        if ($response === false) {
+            $this->error("無効なリンクURL[ $url ]");
+            return false;
+        }
+        return true;
     }
 }
