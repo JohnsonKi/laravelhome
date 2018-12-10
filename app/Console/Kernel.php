@@ -13,7 +13,8 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
-        Commands\GetSubUrlCommand::class
+        Commands\GetSubUrlCommand::class,
+        Commands\GetUrlImagesCommand::class,
         //
     ];
 
