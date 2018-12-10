@@ -148,6 +148,7 @@ class GetUrlImagesCommand extends Command
     }
 
     public function checkURL($url) {
+        sleep(3);
         $response = @file_get_contents($url);
         if ($response === false) {
             $this->error("無効なリンクURL[ $url ]");
