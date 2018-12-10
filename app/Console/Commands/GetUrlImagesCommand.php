@@ -42,7 +42,8 @@ class GetUrlImagesCommand extends Command
         $baseurl = $this->argument("baseurl");
         $destination_depth = 3;
         $client = new Client();
-
+        define('MIN_IMG_HEIGHT', 100);
+        
         if (empty($baseurl)) {
 
             $url_links = DB::select('select link, depth from link_urls where img_done_flg = ? order by depth', [0]);
@@ -59,7 +60,6 @@ class GetUrlImagesCommand extends Command
     }
 
     public function getImages($crawler, $url) {
-        define('MIN_IMG_HEIGHT', 100);
         $patterns = array('img','input');
         $imgUrls = array();
         foreach($patterns as $pattern) {
