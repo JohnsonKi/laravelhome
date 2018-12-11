@@ -59,10 +59,10 @@ class GetUrlImagesCommand extends Command
         }
     }
 
-    public function getImages($url) {
+    public function getImages($baseurl) {
 
         $client = new Client();
-        $crawler = $client->request('GET', $url);
+        $crawler = $client->request('GET', $baseurl);
 
         $patterns = array('img','input');
         $imgUrls = array();
@@ -110,7 +110,7 @@ class GetUrlImagesCommand extends Command
                 return !empty($v);
             }, ARRAY_FILTER_USE_BOTH);
             foreach($tmp as $key => $val) {
-                $this->saveImages($val);
+                $this->saveImages($val, $baseurl);
                 $imgUrls[] = $val;
 
                 sleep(10);
@@ -200,11 +200,23 @@ class GetUrlImagesCommand extends Command
         return $image;
     }
 
-    public function saveImages($url) {
+    public function saveImages($imgurl, $baseurl) {
 
-        $imageData = $this->getImageBaseInfo($url);
-        $imgType = exif_imagetype($url);
-        $imgname = './download/'. date("YmdHis") . rand(10, 99) . image_type_to_extension($imgType);
+        $imageData = $this->getImageBaseInfo($imgurl);
+        if (empty($imageData)) {
+            $this->error("image data check error [ $imgurl ]");
+            return;
+        }
+
+        $imgType = exif_imagetype($imgurl);
+        $folder_name = parse_url($baseurl, PHP_URL_HOST);
+
+        $imgpath = './download/'.$folder_name;
+        if (!file_exists($imgpath)) {
+            mkdir($imgpath, 0777, true);
+        }
+
+        $imgname = $imgpath . '/' . date("YmdHis") . rand(10, 99) . image_type_to_extension($imgType);
         imagetruecolortopalette($imageData, false, 255);
 
         switch ($imgType) {
