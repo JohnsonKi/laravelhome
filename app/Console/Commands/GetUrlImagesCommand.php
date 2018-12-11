@@ -181,7 +181,7 @@ class GetUrlImagesCommand extends Command
 
         $curl = curl_init($baseurl);
         curl_setopt($curl, CURLOPT_TIMEOUT, 800);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 2);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
         curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'GET');
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
         
