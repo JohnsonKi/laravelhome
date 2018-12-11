@@ -15,6 +15,7 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         Commands\GetSubUrlCommand::class,
         Commands\GetUrlImagesCommand::class,
+        Commands\TestCommand::class,
         //
     ];
 

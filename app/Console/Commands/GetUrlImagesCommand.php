@@ -41,27 +41,32 @@ class GetUrlImagesCommand extends Command
     {
         $baseurl = $this->argument("baseurl");
         $destination_depth = 3;
-        $client = new Client();
+        
         define('MIN_IMG_HEIGHT', 200);
+        define('MIN_IMG_WIDTH', 200);
 
         if (empty($baseurl)) {
 
             $url_links = DB::select('select link, depth from link_urls where img_done_flg = ? order by depth', [0]);
             foreach($url_links as $link) {
-                $crawler = $client->request('GET', $link->link);
-                $this->getImages($crawler, $link->link);
+                $this->info(" --------- Start Spider URL:[ $link->link ] --------- ");
+                $this->getImages($link->link);
 
                 sleep(10);
             }
         } else {
-            $crawler = $client->request('GET', $baseurl);
-            $this->getImages($crawler, $baseurl);
+            $this->getImages($baseurl);
         }
     }
 
-    public function getImages($crawler, $url) {
+    public function getImages($url) {
+
+        $client = new Client();
+        $crawler = $client->request('GET', $url);
+
         $patterns = array('img','input');
         $imgUrls = array();
+
         foreach($patterns as $pattern) {
             $tmp = $crawler->filter($pattern)->each(function ($node) {
                 $type = $node->nodeName();
@@ -86,74 +91,138 @@ class GetUrlImagesCommand extends Command
                         $url = $url2;
                     }
                 }
-                $includeSuffixArray = array('jpg', 'jpeg', 'gif', 'bmp', 'png');
-                if (!$this->checkURL($url)) {
+
+                if (!$this->checkImgURL($url)) {
+                    return;
+                } else {
+                    sleep(3);
+                };
+
+                $imageData = $this->getImageBaseInfo($url);
+                if ($this->isExcludeImages($imageData, $url)) {
                     return;
                 };
-                $easypath = explode("?", $url);
-                // http://xxxx/sss/aaa.jpeg
-                $first = current($easypath);
-                $urlPath = parse_url($first, PHP_URL_PATH);
-                $path = explode(".", $urlPath);
-                $last = end($path);
-                if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
-                    if (!empty($easypath[1])) {
-                        list($imgW,$imgH) = getimagesize(substr($url, 0, strpos($url, "?")));
-                    } else {
-                        list($imgW,$imgH) = getimagesize($url);
-                    }
-                    // error_log('>>>>width:<'.$imgW.'> height:<'.$imgH.'>');
-                    if ($imgH > MIN_IMG_HEIGHT) {
-                        return $first;
-                    }
-                }
-                if (!empty($easypath[1])) {
-                    // http://xxxx/sss/aaa?wx_fmt=jpeg
-                    $qtmp = explode("&", $easypath[1]);
-                    foreach($qtmp as $k=>$v) {
-                        $vv = explode("=", $v);
-                        foreach($vv as $kkk=>$vvv) {
-                            if (in_array($vvv, $includeSuffixArray)) {
-                                list($imgW,$imgH) = getimagesize(substr($url, 0, strpos($url, "?")));
-                                // error_log('>>>>width:<'.$imgW.'> height:<'.$imgH.'>');
-                                if ($imgH > MIN_IMG_HEIGHT) {
-                                    return $url;
-                                }
-                            }
-                        }
-                    }
-                }
 
-                sleep(10);
+                return $url;
             });
 
             $tmp = array_filter($tmp, function($v, $k) {
                 return !empty($v);
             }, ARRAY_FILTER_USE_BOTH);
             foreach($tmp as $key => $val) {
-                $imgdata = file_get_contents($val);
-                $suffixStr = explode(".", $val);
-                $imgpath = './download/';
-                if (file_exists($imgpath)) {
-                    $imgname = $imgpath . date("YmdHis") . rand(10, 99) . "." . end($suffixStr);
-                    file_put_contents($imgname, $imgdata);
-                } else {
-                    echo "$imgpath は存在しません";
-                }
+                $this->saveImages($val);
                 $imgUrls[] = $val;
+
                 sleep(10);
             }
         }
         DB::update('update link_urls set have_img_counts = ?, img_done_flg = ? where link = ?', [count($imgUrls), 1, $url]);
     }
 
-    public function checkURL($url) {
-        sleep(3);
-        $response = @file_get_contents($url);
+    public function isExcludeImages($imageData, $url) {
+
+        if (empty($imageData)) {
+            return true;
+        }
+
+        $width = imagesx($imageData);
+        if ($width <= MIN_IMG_WIDTH) {
+            // $this->info("exclude image:[ $url ] [ width=$width ]");
+            return true;
+        }
+
+        $height = imagesy($imageData);
+        if ($height <= MIN_IMG_HEIGHT) {
+            // $this->info("exclude image:[ $url ] [ height=$height ]");
+            return true;
+        }
+
+        return false;
+    }
+
+    public function checkImgURL($url) {
+        $response = @file_get_contents($url, stream_context_create(array('http' => array('timeout' => 160))));
         if ($response === false) {
-            $this->error("無効なリンクURL[ $url ]");
+            $this->error("Not a Valid URL[ $url ]");
             return false;
         }
-        return true;
+
+        $easypath = explode("?", $url);
+        $first = current($easypath);
+        $urlPath = parse_url($first, PHP_URL_PATH);
+        $path = explode(".", $urlPath);
+        $last = mb_strtolower(end($path));
+
+        $includeSuffixArray = array('jpg', 'jpeg', 'gif', 'bmp', 'png');
+
+        // http://xxxx/sss/aaa.jpeg
+        if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
+            return true;
+        }
+
+        if (!empty($easypath[1])) {
+            // http://xxxx/sss/aaa?wx_fmt=jpeg
+            $qtmp = explode("&", $easypath[1]);
+            foreach($qtmp as $k=>$v) {
+                $vv = explode("=", $v);
+                foreach($vv as $kkk=>$vvv) {
+                    if (in_array($vvv, $includeSuffixArray)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        $this->error("Not a Vaild Image URL [ $url ]");
+        return false;
+    }
+
+    public function getImageBaseInfo($baseurl) {
+
+        $curl = curl_init($baseurl);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 500);
+        // curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'GET');
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+        
+        $data = curl_exec($curl);
+        $error_number = curl_errno($curl);
+        $error_message = curl_error($curl);
+        curl_close($curl);
+
+        if ($data === FALSE || empty($data))
+        {
+            $this->error("image data check error [ $baseurl ] [ $error_number ] [ $error_message ]");
+            return;
+        }
+
+        $image = imagecreatefromstring($data);
+
+        return $image;
+    }
+
+    public function saveImages($url) {
+
+        $imageData = $this->getImageBaseInfo($url);
+        $imgType = exif_imagetype($url);
+        $imgname = './download/'. date("YmdHis") . rand(10, 99) . image_type_to_extension($imgType);
+        imagetruecolortopalette($imageData, false, 255);
+
+        switch ($imgType) {
+            case IMAGETYPE_GIF:
+                imagegif($imageData, $imgname);
+                break;
+            case IMAGETYPE_JPEG:
+                imagejpeg($imageData, $imgname, 100);
+                break;
+            case IMAGETYPE_PNG:
+                imagepng($imageData, $imgname, 0);
+                break;
+            case IMAGETYPE_BMP:
+                imagewbmp($imageData, $imgname);
+                break;
+            default:
+                $this->info("exclude image suffix:[ image_type_to_extension($imgType) ]");
+        }
     }
 }

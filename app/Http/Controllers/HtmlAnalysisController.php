@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 class HtmlAnalysisController extends Controller
 {
     public function parserLinks(Request $req) {
+
         $base_url = $req->input('base_url');
         $client = new Client();
         $suburls = $this->getSubUrls($client, $base_url);
