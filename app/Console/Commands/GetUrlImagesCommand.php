@@ -180,8 +180,8 @@ class GetUrlImagesCommand extends Command
     public function getImageBaseInfo($baseurl) {
 
         $curl = curl_init($baseurl);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 500);
-        // curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 800);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 2);
         curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'GET');
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
         
@@ -190,8 +190,7 @@ class GetUrlImagesCommand extends Command
         $error_message = curl_error($curl);
         curl_close($curl);
 
-        if ($data === FALSE || empty($data))
-        {
+        if ($data === FALSE || empty($data) || !empty($error_message)) {
             $this->error("image data check error [ $baseurl ] [ $error_number ] [ $error_message ]");
             return;
         }
