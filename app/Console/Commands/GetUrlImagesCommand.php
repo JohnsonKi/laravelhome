@@ -42,9 +42,6 @@ class GetUrlImagesCommand extends Command
         $baseurl = $this->argument("baseurl");
         $destination_depth = 3;
         
-        define('MIN_IMG_HEIGHT', 200);
-        define('MIN_IMG_WIDTH', 200);
-
         if (empty($baseurl)) {
 
             $url_links = DB::select('select link, depth from link_urls where img_done_flg = ? order by depth', [0]);
@@ -55,7 +52,13 @@ class GetUrlImagesCommand extends Command
                 sleep(10);
             }
         } else {
-            $this->getImages($baseurl);
+            // $this->getImages($baseurl);
+
+            $imageData = $this->getImageBaseInfo($baseurl);
+            if ($this->isExcludeImages($imageData, $baseurl)) {
+                return;
+            };
+            $this->saveImages($val, $baseurl);
         }
     }
 
@@ -116,88 +119,133 @@ class GetUrlImagesCommand extends Command
                 sleep(10);
             }
         }
-        DB::update('update link_urls set have_img_counts = ?, img_done_flg = ? where link = ?', [count($imgUrls), 1, $url]);
+        DB::update('update link_urls set have_img_counts = ?, img_done_flg = ? where link = ?', [count($imgUrls), 1, $baseurl]);
     }
 
-    public function isExcludeImages($imageData, $url) {
+    public function isExcludeImages($imageData, $imgurl) {
 
         if (empty($imageData)) {
             return true;
         }
 
-        $width = imagesx($imageData);
-        if ($width <= MIN_IMG_WIDTH) {
-            // $this->info("exclude image:[ $url ] [ width=$width ]");
-            return true;
-        }
+        $MIN_IMG_WIDTH = 500;
+        $MIN_IMG_HEIGHT = 500;
 
-        $height = imagesy($imageData);
-        if ($height <= MIN_IMG_HEIGHT) {
-            // $this->info("exclude image:[ $url ] [ height=$height ]");
-            return true;
+        try {
+
+            $imgType = exif_imagetype($imgurl);
+            switch ($imgType) {
+                case IMAGETYPE_GIF:
+    
+                    $MIN_IMG_WIDTH = 200;
+                    $MIN_IMG_HEIGHT = 200;
+                    break;
+    
+                case IMAGETYPE_JPEG:
+                    break;
+                case IMAGETYPE_PNG:
+                    break;
+                case IMAGETYPE_BMP:
+                    break;
+                default:
+                    $MIN_IMG_WIDTH = 500;
+                    $MIN_IMG_HEIGHT = 500;
+            }
+    
+            $width = imagesx($imageData);
+            if ($width <= $MIN_IMG_WIDTH) {
+                // $this->info("exclude image:[ $url ] [ width=$width ]");
+                return true;
+            }
+    
+            $height = imagesy($imageData);
+            if ($height <= $MIN_IMG_HEIGHT) {
+                // $this->info("exclude image:[ $url ] [ height=$height ]");
+                return true;
+            }
+
+        } catch(\Exception $e) {
+            $this->error('Error URL:[' . $imgurl .'] [' . $e->getMessage() . ']');
         }
 
         return false;
     }
 
     public function checkImgURL($url) {
-        $response = @file_get_contents($url, stream_context_create(array('http' => array('timeout' => 160))));
-        if ($response === false) {
-            $this->error("Not a Valid URL[ $url ]");
-            return false;
-        }
 
-        $easypath = explode("?", $url);
-        $first = current($easypath);
-        $urlPath = parse_url($first, PHP_URL_PATH);
-        $path = explode(".", $urlPath);
-        $last = mb_strtolower(end($path));
+        try {
 
-        $includeSuffixArray = array('jpg', 'jpeg', 'gif', 'bmp', 'png');
-
-        // http://xxxx/sss/aaa.jpeg
-        if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
-            return true;
-        }
-
-        if (!empty($easypath[1])) {
-            // http://xxxx/sss/aaa?wx_fmt=jpeg
-            $qtmp = explode("&", $easypath[1]);
-            foreach($qtmp as $k=>$v) {
-                $vv = explode("=", $v);
-                foreach($vv as $kkk=>$vvv) {
-                    if (in_array($vvv, $includeSuffixArray)) {
-                        return true;
+            $response = @file_get_contents($url, stream_context_create(array('http' => array('timeout' => 160))));
+            if ($response === false) {
+                $this->error("Not a Valid URL[ $url ]");
+                return false;
+            }
+    
+            $easypath = explode("?", $url);
+            $first = current($easypath);
+            $urlPath = parse_url($first, PHP_URL_PATH);
+            $path = explode(".", $urlPath);
+            $last = mb_strtolower(end($path));
+    
+            $includeSuffixArray = array('jpg', 'jpeg', 'gif', 'bmp', 'png');
+    
+            // http://xxxx/sss/aaa.jpeg
+            if ($urlPath !== '/' && in_array($last, $includeSuffixArray)) {
+                return true;
+            }
+    
+            if (!empty($easypath[1])) {
+                // http://xxxx/sss/aaa?wx_fmt=jpeg
+                $qtmp = explode("&", $easypath[1]);
+                foreach($qtmp as $k=>$v) {
+                    $vv = explode("=", $v);
+                    foreach($vv as $kkk=>$vvv) {
+                        if (in_array($vvv, $includeSuffixArray)) {
+                            return true;
+                        }
                     }
                 }
             }
+
+        } catch (\Exception $e) {
+            $this->error('Error URL:[' . $url .'] [' . $e->getMessage() . ']');
         }
 
         $this->error("Not a Vaild Image URL [ $url ]");
         return false;
+
     }
 
     public function getImageBaseInfo($baseurl) {
 
-        $curl = curl_init($baseurl);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 800);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
-        curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'GET');
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
-        
-        $data = curl_exec($curl);
-        $error_number = curl_errno($curl);
-        $error_message = curl_error($curl);
-        curl_close($curl);
+        try {
 
-        if ($data === FALSE || empty($data) || !empty($error_message)) {
-            $this->error("image data check error [ $baseurl ] [ $error_number ] [ $error_message ]");
-            return;
+            $curl = curl_init($baseurl);
+            curl_setopt($curl, CURLOPT_TIMEOUT, 800);
+            curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'GET');
+            curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+            
+            $data = curl_exec($curl);
+            $error_number = curl_errno($curl);
+            $error_message = curl_error($curl);
+            curl_close($curl);
+
+            if ($data === FALSE || empty($data) || !empty($error_message)) {
+                $this->error("image data check error [ $baseurl ] [ $error_number ] [ $error_message ]");
+                return;
+            }
+
+            // $data = base64_decode($data);
+        
+            $image = imagecreatefromstring($data);
+            return $image;
+
+        } catch(\Exception $e) {
+            $this->error('Error URL:[' . $baseurl .'] [' . $e->getMessage() . ']');
         }
 
-        $image = imagecreatefromstring($data);
-
-        return $image;
+        return;
     }
 
     public function saveImages($imgurl, $baseurl) {
@@ -208,32 +256,38 @@ class GetUrlImagesCommand extends Command
             return;
         }
 
-        $imgType = exif_imagetype($imgurl);
-        $folder_name = parse_url($baseurl, PHP_URL_HOST);
+        try {
 
-        $imgpath = './download/'.$folder_name;
-        if (!file_exists($imgpath)) {
-            mkdir($imgpath, 0777, true);
-        }
+            $imgType = exif_imagetype($imgurl);
+            $folder_name = parse_url($baseurl, PHP_URL_HOST);
+    
+            $imgpath = './download/'.$folder_name;
+            if (!file_exists($imgpath)) {
+                mkdir($imgpath, 0777, true);
+            }
+    
+            $imgname = $imgpath . '/' . date("YmdHis") . rand(10, 99) . image_type_to_extension($imgType);
+            imagetruecolortopalette($imageData, false, 255);
+    
+            switch ($imgType) {
+                case IMAGETYPE_GIF:
+                    imagegif($imageData, $imgname);
+                    break;
+                case IMAGETYPE_JPEG:
+                    imagejpeg($imageData, $imgname, 100);
+                    break;
+                case IMAGETYPE_PNG:
+                    imagepng($imageData, $imgname, 0);
+                    break;
+                case IMAGETYPE_BMP:
+                    imagewbmp($imageData, $imgname);
+                    break;
+                default:
+                    $this->info("exclude image suffix:[ image_type_to_extension($imgType) ]");
+            }
 
-        $imgname = $imgpath . '/' . date("YmdHis") . rand(10, 99) . image_type_to_extension($imgType);
-        imagetruecolortopalette($imageData, false, 255);
-
-        switch ($imgType) {
-            case IMAGETYPE_GIF:
-                imagegif($imageData, $imgname);
-                break;
-            case IMAGETYPE_JPEG:
-                imagejpeg($imageData, $imgname, 100);
-                break;
-            case IMAGETYPE_PNG:
-                imagepng($imageData, $imgname, 0);
-                break;
-            case IMAGETYPE_BMP:
-                imagewbmp($imageData, $imgname);
-                break;
-            default:
-                $this->info("exclude image suffix:[ image_type_to_extension($imgType) ]");
+        } catch(\Exception $e) {
+            $this->error('Error URL:[' . $baseurl .'] [' . $e->getMessage() . ']');
         }
     }
 }
