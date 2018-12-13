@@ -41,124 +41,119 @@ class GetSubUrlCommand extends Command
     {
         $baseurl = $this->argument("baseurl");
 
-        $destination_depth = 3;
-
         if (empty($baseurl)) {
 
-            $url_links = DB::select('select link, depth from link_urls where done_flg = ? order by depth', [0]);
+            $url_links = DB::select('select link, depth from link_urls where done_flg = ? and invalid_flg = ? order by depth', [0, 0]);
             foreach($url_links as $link) {
-                $depth = $link->depth;
-                $client = new Client();
 
-                // 深さnまで掘出
-                while ($destination_depth > 0) {
-                    $this->info("深さ[${depth}] 掘出 開始");
+                $link_depth = $link->depth;
+                $link_url = $link->link;
 
-                    $url_links = DB::select('select link, text from link_urls where depth = ? and done_flg = ?', [$depth++, 0]);
-                    foreach($url_links as $link) {
-                        $this->getSubUrls($client, $link->link, $depth);
-                    }
-
-                    $this->info("掘出 終了");
-                    sleep(10);
-
-                    $destination_depth--;
-                }
+                $this->info(" --------- Start Spider URL:[ $link_url ] --------- ");
+                $this->getSubUrls($link_url, $link_depth);
             }
-        }
-        
+        } else {
 
-        $this->parserLinks($baseurl, $destination_depth);
-        $this->info("処理完了");
-        //
+            $this->info(" --------- Start Spider URL:[ $baseurl ] --------- ");
+            $this->getSubUrls($baseurl, 0);
+        }
     }
 
-    public function parserLinks($base_url, $destination_depth) {
+    public function getSubUrls($url, $depth) {
 
-        $depth = 0;
-        DB::insert('INSERT INTO link_urls(link, depth) VALUES (?, ?)', [$base_url, $depth++]);
+        if (!$this->checkURLValid($url)) {
+            DB::update('update link_urls set done_flg = ?, invalid_flg = ? where link = ?', [1, 1, $url]);
+            return;
+        }
 
         $client = new Client();
-        $suburls = $this->getSubUrls($client, $base_url, $depth);
-
-        // 深さnまで掘出
-        while (!empty($suburls) && $destination_depth > 0) {
-            $this->info("深さ[${depth}] 掘出 開始");
-
-            $url_links = DB::select('select link, text from link_urls where depth = ? and done_flg = ?', [$depth++, 0]);
-            foreach($url_links as $link) {
-                $this->getSubUrls($client, $link->link, $depth);
-            }
-
-            $this->info("掘出 終了");
-            sleep(10);
-
-            $destination_depth--;
-        }
-    }
-
-    public function getSubUrls($client, $url, $depth) {
         $patterns = array('a');
-
-        $response = @file_get_contents($url);
-        if ($response === false) {
-            $this->error("無効なリンクURL[ $url ]");
-            DB::update('update link_urls set done_flg = ? where link = ?', [1, $url]);
-            return null;
-        }
-        
-        sleep(10);
-
         $crawler = $client->request('GET', $url);
+
         $subUrls = array();
         foreach($patterns as $pattern) {
             $tmp = $crawler->filter($pattern)->each(function ($node) {
-                // 文字数制限
-                $strSize = mb_strlen(trim($node->text()));
-                // 隙間時間を置く
-                // sleep(1);
-                if ($strSize > 4) {
-                    $doUrl = $node->link()->getUri();
-                    $excludeStrArray = array('mailto:', 'tel:', 'javascript:');
-                    foreach($excludeStrArray as $value) {
-                        if (strpos($doUrl, $value) !== false) {
-                            return;
-                        }
-                    }
+                
+                $link_text = $node->text();
+                $link_url = $node->link()->getUri();
 
-                    // error_log('before:<'.$node->link()->getUri().'>after<'.$node->attr('href').'>');
-                    // home pageだけなら除外する
-                    $urlPath = parse_url($doUrl, PHP_URL_PATH);
-                    // linkでなくファイルの場合除外
-                    $path = explode(".", $urlPath);
-                    $last = end($path);
-                    $excludeSuffixArray = array('js', 'css', 'jpg', 'jpeg', 'gif', 'bmp', 'png', 'txt');
-                    if ($urlPath !== '/' && !in_array($last, $excludeSuffixArray) && strpos($doUrl, 'mailto:') === false && strpos($doUrl, 'tel:') === false && strpos($doUrl, 'javascript:') === false) {
-                        return array('text'=>$node->text(), 'url'=>$doUrl);
-                    }
-                }
+                if (!$this->isExcludeURL($link_text, $link_url)) {
+                    return array('text'=>$link_text, 'url'=>$link_url);
+                };
+
             });
+
             $tmp = array_filter($tmp, function($v, $k) {
                 return !empty($v);
             }, ARRAY_FILTER_USE_BOTH);
 
-            $sleep_count = 0;
             foreach($tmp as $key => $val) {
+
                 $subUrls[$val['text']] = $val['url'];
-                $url_exist = DB::select('select count(link) as exist from link_urls where link = ?', [$val['url']]);
 
-                if (empty($url_exist[0]->exist)) {
-                    DB::insert('INSERT INTO link_urls(link, text, depth) VALUES (?, ?, ?)', [$val['url'], $val['text'], $depth]);
-
-                    $sleep_count++;
-                    if ($sleep_count>50) {
-                        $sleep_count = 0;
-                        sleep(3);
-                    }
-                } 
+                if (!$this->isDBExistURL($val['url'])) {
+                    DB::insert('INSERT INTO link_urls(link, text, depth) VALUES (?, ?, ?)', [$val['url'], $val['text'], $depth+1]);
+                };
             }
-            DB::update('update link_urls set have_link_counts = ?, done_flg = ? where link = ? and depth = ?', [count($subUrls), 1, $url, $depth-1]);
+            
+            DB::update('update link_urls set have_link_counts = ?, done_flg = ? where link = ? and depth = ?', [count($subUrls), 1, $url, $depth]);
         }
-        return $subUrls;
+    }
+
+    public function checkURLValid($baseurl) {
+        $response = @file_get_contents($baseurl);
+        if ($response === false) {
+            $this->error("Not a Valid URL[ $baseurl ]");
+            return false;
+        }
+        
+        sleep(10);
+
+        return true;
+    }
+
+    public function isExcludeURL($link_text, $link_url) {
+
+        // 文字数制限
+        $strSize = mb_strlen(trim($link_text));
+        if ($strSize < 5) {
+            $this->info('Link Text Character limit Over:[' . $link_text .'] [' . $link_url . ']');
+            return true;
+        }
+
+        // 特殊リンク制限
+        $excludeStrArray = array('mailto:', 'tel:', 'javascript:');
+        foreach($excludeStrArray as $value) {
+            if (strpos($link_url, $value) !== false) {
+                $this->info('Link URL Type inValid:[' . $value .'] [' . $link_url . ']');
+                return true;
+            }
+        }
+
+        // ホームページ除外
+        $urlPath = parse_url($link_url, PHP_URL_PATH);
+        if ($urlPath === '/') {
+            $this->info('home Link URL:[' . $urlPath .'] [' . $link_url . ']');
+            return true;
+        }
+
+        // linkでなくファイルの場合除外
+        $path = explode(".", $urlPath);
+        $last = end($path);
+        $excludeSuffixArray = array('js', 'css', 'jpg', 'jpeg', 'gif', 'bmp', 'png', 'txt');
+        if (in_array($last, $excludeSuffixArray)) {
+            $this->info('Is File URL:[' . $last .'] [' . $link_url . ']');
+            return true;
+        }
+
+        return false;
+    }
+
+    public function isDBExistURL($link_url) {
+        $url_exist = DB::select('select count(link) as exist from link_urls where link = ?', [$link_url]);
+        if (!empty($url_exist[0]->exist)) {
+            return true;
+        }
+        return false;
     }
 }
